@@ -1,0 +1,21 @@
+rodada_id,clube_id,Time,Adversario,Mando,Data,Hora,Estadio
+1,293,Athletico-PR,Internacional,Fora de Casa,28/01/2026,19:00,Beira-Rio
+1,282,Atlético-MG,Palmeiras,Casa,28/01/2026,19:00,Arena MRV
+1,265,Bahia,Corinthians,Fora de Casa,28/01/2026,20:00,Neo Química Arena
+1,263,Botafogo,Cruzeiro,Casa,29/01/2026,21:30,Nilton Santos
+1,315,Chapecoense,Santos,Casa,28/01/2026,20:00,Arena Condá
+1,264,Corinthians,Bahia,Casa,28/01/2026,20:00,Neo Química Arena
+1,294,Coritiba,Red Bull Bragantino,Casa,28/01/2026,19:00,Couto Pereira
+1,283,Cruzeiro,Botafogo,Fora de Casa,29/01/2026,21:30,Nilton Santos
+1,262,Flamengo,São Paulo,Fora de Casa,28/01/2026,21:30,Morumbis
+1,266,Fluminense,Grêmio,Casa,28/01/2026,19:30,Maracanã
+1,284,Grêmio,Fluminense,Fora de Casa,28/01/2026,19:30,Maracanã
+1,285,Internacional,Athletico-PR,Casa,28/01/2026,19:00,Beira-Rio
+1,2305,Mirassol,Vasco,Casa,29/01/2026,20:00,José Maria de Campos Maia
+1,275,Palmeiras,Atlético-MG,Fora de Casa,28/01/2026,19:00,Arena MRV
+1,280,Red Bull Bragantino,Coritiba,Fora de Casa,28/01/2026,19:00,Couto Pereira
+1,364,Remo,Vitória,Fora de Casa,28/01/2026,19:00,Barradão
+1,277,Santos,Chapecoense,Fora de Casa,28/01/2026,20:00,Arena Condá
+1,276,São Paulo,Flamengo,Casa,28/01/2026,21:30,Morumbis
+1,267,Vasco,Mirassol,Fora de Casa,29/01/2026,20:00,José Maria de Campos Maia
+1,287,Vitória,Remo,Casa,28/01/2026,19:00,Barradão

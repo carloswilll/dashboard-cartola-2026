@@ -2,11 +2,17 @@ import streamlit as st
 import pandas as pd
 import glob
 import plotly.express as px
-import plotly.graph_objects as go
 
 # --- Configurações Iniciais ---
 st.set_page_config(page_title="Dashboard Cartola 2026", layout="wide")
 st.title("⚽ Dashboard Analítico - Cartola FC 2026")
+
+# --- Funções Auxiliares ---
+def formatar_foto(url):
+    """Corrige a URL da foto do jogador para o tamanho correto."""
+    if pd.isna(url) or str(url) == 'nan':
+        return "https://via.placeholder.com/220?text=Sem+Foto"
+    return str(url).replace('FORMATO', '220x220')
 
 # --- Funções de Carregamento ---
 @st.cache_data
@@ -25,7 +31,7 @@ def load_data():
             
     df_main = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-    # 2. Carregar dados de Confrontos (CORREÇÃO: Ler TODOS os arquivos, não apenas o [0])
+    # 2. Carregar dados de Confrontos
     confronto_files = glob.glob("confrontos_*.csv")
     df_jogos_list = []
     
@@ -47,7 +53,7 @@ def load_data():
 # Executa o carregamento
 df, df_jogos = load_data()
 
-# --- Processamento e Tratamento Seguros ---
+# --- Processamento ---
 if df.empty:
     st.error("⚠️ Nenhum dado de rodada encontrado. Verifique se os arquivos 'rodada-*.csv' estão na pasta.")
 else:
@@ -73,7 +79,7 @@ else:
         df['Mando_Padrao'] = 'N/A'
         df['Adversario'] = 'N/A'
 
-    # Tratamento da coluna 'Entrou em Campo' (Garante que é Booleano)
+    # Tratamento da coluna 'Entrou em Campo'
     if 'atletas.entrou_em_campo' in df.columns:
         df['atletas.entrou_em_campo'] = df['atletas.entrou_em_campo'].astype(str).str.lower().isin(['true', '1', '1.0'])
 
@@ -81,17 +87,20 @@ else:
     pos_map = {1: 'Goleiro', 2: 'Lateral', 3: 'Zagueiro', 4: 'Meia', 5: 'Atacante', 6: 'Técnico'}
     df['posicao_nome'] = df['atletas.posicao_id'].map(pos_map)
 
-    # Preenchimento de Scouts Faltantes com 0
-    scout_cols = ['G', 'A', 'DS', 'FC', 'FS', 'CA', 'FD', 'FF', 'FT', 'SG', 'DE', 'DP', 'GS']
-    for col in scout_cols:
+    # --- GARANTIA DE SCOUTS (Preenche com 0 se não existir) ---
+    # Lista expandida para garantir que a aba Destaques funcione
+    todos_scouts = ['G', 'A', 'FT', 'FD', 'FF', 'FS', 'I', 'DS', 'SG', 'DE', 'DP', 'GS', 'FC', 'CA', 'CV', 'GC', 'PP']
+    for col in todos_scouts:
         if col not in df.columns:
             df[col] = 0
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-    # Cálculos Avançados
+    # --- CÁLCULO DA MÉDIA BÁSICA (Fórmula Clássica) ---
+    # Mantendo a fórmula simples que você prefere: Pontos - (Gols + Assistências)
     df['media_basica'] = df['atletas.pontos_num'] - (8 * df['G']) - (5 * df['A'])
-    df['tamanho_visual'] = df['media_basica'].apply(lambda x: max(0.1, x)) # Proteção visual para o gráfico
     
+    # Cálculos Auxiliares
+    df['tamanho_visual'] = df['media_basica'].apply(lambda x: max(0.1, x)) # Proteção visual
     df['scouts_ofensivos_total'] = df['G'] + df['A'] + df['FD'] + df['FF'] + df['FT'] + df['FS']
     df['scouts_defensivos_total'] = df['DS'] + df['DE'] + df['SG']
     df['finalizacoes_total'] = df['FD'] + df['FF'] + df['FT']
@@ -119,7 +128,6 @@ else:
     st.sidebar.markdown("---")
     st.sidebar.header("📌 Filtros Categóricos")
 
-    # CORREÇÃO: Usar 'default' preenchido garante que a tela não inicie vazia!
     all_clubes = sorted(df['atletas.clube.id.full.name'].dropna().unique())
     all_posicoes = sorted(df['posicao_nome'].dropna().unique())
 
@@ -168,40 +176,73 @@ else:
 
         # Abas do Dashboard
         tab_destaques, tab_times, tab_scouts, tab_valorizacao, tab_tabela = st.tabs([
-            "🏆 Destaques", 
+            "🏆 Destaques (Novo)", 
             "🛡️ Análise de Times", 
             "📊 Casa vs Fora", 
             "💎 Mapa de Valorização", 
             "📋 Tabela Completa"
         ])
 
-        # --- ABA 1: DESTAQUES ---
+        # --- ABA 1: DESTAQUES (NOVA VERSÃO COM FOTOS E TODOS OS SCOUTS) ---
         with tab_destaques:
-            col_d1, col_d2, col_d3, col_d4 = st.columns(4)
+            st.markdown("#### 🔥 Líderes de Estatísticas")
             
-            def get_top_player(coluna):
-                if df_filtrado[coluna].sum() == 0: return "Ninguém", 0.0
-                idx = df_filtrado[coluna].idxmax()
+            # Função para renderizar o cartão do jogador com foto
+            def render_destaque(label, col_scout, container):
+                if df_filtrado[col_scout].sum() == 0:
+                    container.info(f"{label}: 0")
+                    return
+                
+                idx = df_filtrado[col_scout].idxmax()
                 row = df_filtrado.loc[idx]
-                return f"{row['atletas.apelido']} ({row['atletas.clube.id.full.name'][:3].upper()})", row[coluna]
+                foto_url = formatar_foto(row.get('atletas.foto', ''))
+                
+                with container:
+                    st.markdown(f"**{label}**")
+                    c_img, c_info = st.columns([1, 2])
+                    with c_img:
+                        st.image(foto_url, width=80)
+                    with c_info:
+                        st.caption(f"{row['atletas.apelido']}")
+                        st.caption(f"{row['atletas.clube.id.full.name']}")
+                        st.metric("Total", int(row[col_scout]))
+                    st.divider()
 
-            top_g_nome, top_g_val = get_top_player('G')
-            top_a_nome, top_a_val = get_top_player('A')
-            top_ds_nome, top_ds_val = get_top_player('DS')
-            top_fin_nome, top_fin_val = get_top_player('finalizacoes_total')
+            # Grupo 1: Ataque
+            st.success("⚽ **Setor Ofensivo**")
+            c1, c2, c3, c4 = st.columns(4)
+            render_destaque("Artilheiro (G)", 'G', c1)
+            render_destaque("Garçom (A)", 'A', c2)
+            render_destaque("Fin. Trave (FT)", 'FT', c3)
+            render_destaque("Fin. Defendida (FD)", 'FD', c4)
+            
+            c5, c6, c7, c8 = st.columns(4)
+            render_destaque("Fin. Fora (FF)", 'FF', c5)
+            render_destaque("Faltas Sofridas (FS)", 'FS', c6)
+            render_destaque("Impedimentos (I)", 'I', c7)
+            c8.empty() 
 
-            col_d1.metric("⚽ Artilheiro", top_g_nome, f"{int(top_g_val)} Gols")
-            col_d2.metric("👟 Garçom (Assist)", top_a_nome, f"{int(top_a_val)} Assis.")
-            col_d3.metric("🛑 Rei dos Desarmes", top_ds_nome, f"{int(top_ds_val)} DS")
-            col_d4.metric("🚀 Mais Finaliza", top_fin_nome, f"{int(top_fin_val)} Finaliz.")
+            # Grupo 2: Defesa
+            st.info("🛡️ **Setor Defensivo**")
+            d1, d2, d3, d4 = st.columns(4)
+            render_destaque("Desarmes (DS)", 'DS', d1)
+            render_destaque("Saldo de Gol (SG)", 'SG', d2)
+            render_destaque("Defesas (DE)", 'DE', d3)
+            render_destaque("Pênaltis Def (DP)", 'DP', d4)
 
-            st.markdown("##### Top 10 Pontuadores (Ranking de Eficiência)")
-            top10 = df_filtrado.nlargest(10, 'atletas.pontos_num')[
-                ['atletas.apelido', 'posicao_nome', 'atletas.clube.id.full.name', 'Mando_Padrao', 'Adversario', 'atletas.preco_num', 'atletas.pontos_num']
-            ]
-            st.dataframe(top10, hide_index=True, use_container_width=True)
+            # Grupo 3: Negativos/Disciplina
+            st.warning("⚠️ **Disciplina e Erros**")
+            n1, n2, n3, n4 = st.columns(4)
+            render_destaque("Gols Sofridos (GS)", 'GS', n1)
+            render_destaque("Faltas Cometidas (FC)", 'FC', n2)
+            render_destaque("Cartão Amarelo (CA)", 'CA', n3)
+            render_destaque("Cartão Vermelho (CV)", 'CV', n4)
+            
+            n5, n6, n7, n8 = st.columns(4)
+            render_destaque("Gol Contra (GC)", 'GC', n5)
+            render_destaque("Pênalti Perdido (PP)", 'PP', n6)
 
-        # --- ABA 2: ANÁLISE DE TIMES ---
+        # --- ABA 2: ANÁLISE DE TIMES (REVERTIDA PARA ANTIGA) ---
         with tab_times:
             club_stats = df_filtrado.groupby('atletas.clube.id.full.name').agg({
                 'atletas.pontos_num': 'mean',
@@ -226,7 +267,7 @@ else:
                                  color='Total_Finalizacoes', color_continuous_scale='Reds')
                 st.plotly_chart(fig_fin, use_container_width=True)
 
-        # --- ABA 3: CASA VS FORA ---
+        # --- ABA 3: CASA VS FORA (REVERTIDA PARA ANTIGA) ---
         with tab_scouts:
             if not df_filtrado['Mando_Padrao'].isin(['N/A']).all():
                 grupo_mando = df_filtrado.groupby(['atletas.clube.id.full.name', 'Mando_Padrao'])[['scouts_ofensivos_total', 'scouts_defensivos_total']].mean().reset_index()
@@ -246,12 +287,9 @@ else:
             else:
                 st.info("Filtre por CASA ou FORA para visualizar esta aba.")
 
-        # --- ABA 4: VALORIZAÇÃO (O GRÁFICO PREMIUM) ---
+        # --- ABA 4: VALORIZAÇÃO (REVERTIDA PARA ANTIGA) ---
         with tab_valorizacao:
-            st.markdown("### Mapa de Custo-Benefício (Preço x Entrega)")
-            st.write("Identifique visualmente os jogadores que entregam muitos pontos custando pouco.")
-            
-            # Gráfico de Dispersão Avançado
+            st.subheader("Relação Preço x Entrega")
             fig_val = px.scatter(
                 df_filtrado, 
                 x='atletas.preco_num', 
@@ -265,39 +303,19 @@ else:
                     'atletas.preco_num': ':.2f',
                     'atletas.pontos_num': ':.1f',
                     'media_basica': ':.1f',
-                    'tamanho_visual': False # Esconde a variável técnica do hover
+                    'tamanho_visual': False
                 },
-                labels={
-                    'atletas.preco_num': 'Preço Atual (C$)',
-                    'atletas.pontos_num': 'Pontos na Rodada',
-                    'posicao_nome': 'Posição'
-                },
-                template='plotly_white',
-                height=600
+                title="Quem entrega mais pontos por C$ investido? (Bolha = Média Básica)"
             )
-
-            # Adicionando Linhas de Quadrante (Médias)
-            media_preco = df_filtrado['atletas.preco_num'].mean()
-            media_pontos = df_filtrado['atletas.pontos_num'].mean()
-
-            fig_val.add_hline(y=media_pontos, line_dash="dash", line_color="gray", annotation_text="Média de Pontos")
-            fig_val.add_vline(x=media_preco, line_dash="dash", line_color="gray", annotation_text="Preço Médio")
-            
-            # Anotações Estratégicas nos quadrantes
-            fig_val.add_annotation(x=media_preco/2, y=df_filtrado['atletas.pontos_num'].max(), text="💎 Zona de Ouro (Barato e Pontua Muito)", showarrow=False, font=dict(color="green", size=14))
-            fig_val.add_annotation(x=df_filtrado['atletas.preco_num'].max(), y=df_filtrado['atletas.pontos_num'].min(), text="⛔ Zona de Risco (Caro e Pontua Pouco)", showarrow=False, font=dict(color="red", size=14))
-
-            # Estilização
-            fig_val.update_traces(marker=dict(line=dict(width=1, color='DarkSlateGrey')), opacity=0.8)
             st.plotly_chart(fig_val, use_container_width=True)
 
-        # --- ABA 5: TABELA COMPLETA ---
+        # --- ABA 5: TABELA COMPLETA (REVERTIDA PARA ANTIGA) ---
         with tab_tabela:
             st.subheader("Buscador Detalhado")
             cols_view = [
                 'atletas.apelido', 'atletas.clube.id.full.name', 'posicao_nome', 
                 'Mando_Padrao', 'Adversario', 'atletas.preco_num', 'atletas.pontos_num', 
-                'media_basica', 'G', 'A', 'DS', 'SG', 'finalizacoes_total'
+                'media_basica', 'G', 'A', 'DS', 'finalizacoes_total'
             ]
             
             cols_existentes = [c for c in cols_view if c in df_filtrado.columns]

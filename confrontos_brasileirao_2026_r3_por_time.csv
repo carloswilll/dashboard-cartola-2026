@@ -1,0 +1,21 @@
+rodada_id,clube_id,Time,Adversario,Mando,Data,Hora,Estadio
+3,293,Athletico-PR,Santos,Casa,12/02/2026,19:00,Ligga Arena
+3,282,Atlético-MG,Remo,Casa,11/02/2026,20:00,Arena MRV
+3,265,Bahia,Vasco,Fora de Casa,11/02/2026,21:30,São Januário
+3,263,Botafogo,Fluminense,Fora de Casa,12/02/2026,19:30,Maracanã
+3,315,Chapecoense,Coritiba,Casa,11/02/2026,19:00,Arena Condá
+3,264,Corinthians,Red Bull Bragantino,Casa,12/02/2026,20:00,Neo Química Arena
+3,294,Coritiba,Chapecoense,Fora de Casa,11/02/2026,19:00,Arena Condá
+3,283,Cruzeiro,Mirassol,Fora de Casa,11/02/2026,19:00,José Maria de Campos Maia
+3,262,Flamengo,Vitória,Fora de Casa,10/02/2026,21:30,Barradão
+3,266,Fluminense,Botafogo,Casa,12/02/2026,19:30,Maracanã
+3,284,Grêmio,São Paulo,Fora de Casa,11/02/2026,21:30,Morumbis
+3,285,Internacional,Palmeiras,Casa,12/02/2026,21:30,Beira-Rio
+3,2305,Mirassol,Cruzeiro,Casa,11/02/2026,19:00,José Maria de Campos Maia
+3,275,Palmeiras,Internacional,Fora de Casa,12/02/2026,21:30,Beira-Rio
+3,280,Red Bull Bragantino,Corinthians,Fora de Casa,12/02/2026,20:00,Neo Química Arena
+3,364,Remo,Atlético-MG,Fora de Casa,11/02/2026,20:00,Arena MRV
+3,277,Santos,Athletico-PR,Fora de Casa,12/02/2026,19:00,Ligga Arena
+3,276,São Paulo,Grêmio,Casa,11/02/2026,21:30,Morumbis
+3,267,Vasco,Bahia,Casa,11/02/2026,21:30,São Januário
+3,287,Vitória,Flamengo,Casa,10/02/2026,21:30,Barradão

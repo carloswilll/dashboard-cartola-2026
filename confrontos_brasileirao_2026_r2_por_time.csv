@@ -1,0 +1,21 @@
+rodada_id,clube_id,Time,Adversario,Mando,Data,Hora,Estadio
+2,293,Athletico-PR,Corinthians,Casa,19/02/2026,19:30,Ligga Arena
+2,282,Atlético-MG,Red Bull Bragantino,Fora de Casa,04/02/2026,19:00,Nabi Abi Chedid
+2,265,Bahia,Fluminense,Casa,05/02/2026,19:00,Arena Fonte Nova
+2,263,Botafogo,Grêmio,Fora de Casa,04/02/2026,21:30,Arena do Grêmio
+2,315,Chapecoense,Vasco,Fora de Casa,05/02/2026,20:00,São Januário
+2,264,Corinthians,Athletico-PR,Fora de Casa,19/02/2026,19:30,Ligga Arena
+2,294,Coritiba,Cruzeiro,Fora de Casa,05/02/2026,21:30,Mineirão
+2,283,Cruzeiro,Coritiba,Casa,05/02/2026,21:30,Mineirão
+2,262,Flamengo,Internacional,Casa,04/02/2026,19:00,Maracanã
+2,266,Fluminense,Bahia,Fora de Casa,05/02/2026,19:00,Arena Fonte Nova
+2,284,Grêmio,Botafogo,Casa,04/02/2026,21:30,Arena do Grêmio
+2,285,Internacional,Flamengo,Fora de Casa,04/02/2026,19:00,Maracanã
+2,2305,Mirassol,Remo,Fora de Casa,04/02/2026,20:00,Mangueirão
+2,275,Palmeiras,Vitória,Casa,04/02/2026,21:30,Arena Barueri
+2,280,Red Bull Bragantino,Atlético-MG,Casa,04/02/2026,19:00,Nabi Abi Chedid
+2,364,Remo,Mirassol,Casa,04/02/2026,20:00,Mangueirão
+2,277,Santos,São Paulo,Casa,04/02/2026,20:00,Vila Belmiro
+2,276,São Paulo,Santos,Fora de Casa,04/02/2026,20:00,Vila Belmiro
+2,267,Vasco,Chapecoense,Casa,05/02/2026,20:00,São Januário
+2,287,Vitória,Palmeiras,Fora de Casa,04/02/2026,21:30,Arena Barueri

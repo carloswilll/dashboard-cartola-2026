@@ -26,13 +26,14 @@ def load_data():
     for f in rodada_files:
         try:
             temp = pd.read_csv(f)
-            temp.columns = temp.columns.str.strip()
+            temp.columns = temp.columns.str.strip() # Limpeza de espaços
             dfs.append(temp)
         except Exception as e:
             st.warning(f"Erro ao ler {f}: {e}")
             
     df_main = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
     
+    # Remove duplicatas de leitura bruta
     if not df_main.empty:
         df_main = df_main.drop_duplicates(subset=['atletas.atleta_id', 'atletas.rodada_id'])
 
@@ -66,13 +67,13 @@ df, df_jogos = load_data()
 
 # --- Processamento ---
 if df.empty:
-    st.error("⚠️ Nenhum dado encontrado.")
+    st.error("⚠️ Nenhum dado encontrado. Verifique se os arquivos CSV estão na pasta.")
 else:
     # Tipagem Segura
     df['atletas.rodada_id'] = pd.to_numeric(df['atletas.rodada_id'], errors='coerce').fillna(0).astype(int)
     df['atletas.clube_id'] = pd.to_numeric(df['atletas.clube_id'], errors='coerce').fillna(0).astype(int)
     
-    # Merge com Jogos
+    # Merge com Jogos (Blindagem contra erro de Coluna)
     if not df_jogos.empty:
         df_jogos['rodada_id'] = pd.to_numeric(df_jogos['rodada_id'], errors='coerce').fillna(0).astype(int)
         df_jogos['clube_id'] = pd.to_numeric(df_jogos['clube_id'], errors='coerce').fillna(0).astype(int)
@@ -89,9 +90,11 @@ else:
             how='left'
         )
     
-    # Preenche Falhas
+    # Garante que as colunas existam para não dar KeyError
     if 'Mando_Padrao' not in df.columns: df['Mando_Padrao'] = 'N/A'
     if 'Adversario' not in df.columns: df['Adversario'] = 'N/A'
+    
+    # Preenche N/A
     df['Mando_Padrao'] = df['Mando_Padrao'].fillna('N/A')
     df['Adversario'] = df['Adversario'].fillna('N/A')
 
@@ -103,14 +106,14 @@ else:
     pos_map = {1: 'Goleiro', 2: 'Lateral', 3: 'Zagueiro', 4: 'Meia', 5: 'Atacante', 6: 'Técnico'}
     df['posicao_nome'] = df['atletas.posicao_id'].map(pos_map)
 
-    # Preenche Scouts
+    # Lista de Scouts Oficiais
     todos_scouts = ['G', 'A', 'FT', 'FD', 'FF', 'FS', 'PS', 'I', 'PP', 'DS', 'SG', 'DE', 'DP', 'GS', 'FC', 'PC', 'CA', 'CV', 'GC']
     for col in todos_scouts:
         if col not in df.columns: df[col] = 0
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-    # Auxiliares
-    df['tamanho_visual'] = df['atletas.pontos_num'].apply(lambda x: max(1.0, x)) # Agora usa Pontos Totais
+    # Auxiliares Visuais
+    df['tamanho_visual'] = df['atletas.pontos_num'].apply(lambda x: max(1.0, x))
     df['scouts_ofensivos_total'] = df['G'] + df['A'] + df['FD'] + df['FF'] + df['FT'] + df['FS']
     df['scouts_defensivos_total'] = df['DS'] + df['DE'] + df['SG']
     df['finalizacoes_total'] = df['FD'] + df['FF'] + df['FT']
@@ -140,7 +143,7 @@ else:
     somente_jogaram = st.sidebar.checkbox("Apenas quem jogou?", value=True)
 
     # --- APLICAÇÃO DOS FILTROS ---
-    # Filtro Base (Rodada e Categorias)
+    # Filtro de Período e Categorias
     df_filtrado_base = df[
         (df['atletas.rodada_id'] >= sel_rodada_range[0]) &
         (df['atletas.rodada_id'] <= sel_rodada_range[1])
@@ -158,28 +161,41 @@ else:
     ]
 
     # ==========================================
-    # --- AGRUPAMENTO (LÓGICA: PONTOS SOMA / SCOUTS ÚLTIMO) ---
+    # --- AGRUPAMENTO CORRIGIDO (O Segredo do Danilo) ---
     # ==========================================
     def agrupar_dados(dataframe_input):
         if dataframe_input.empty: return pd.DataFrame()
         
-        # 1. PONTUAÇÃO: Soma
-        df_pontos = dataframe_input.groupby('atletas.atleta_id')['atletas.pontos_num'].sum().reset_index()
-        df_pontos.rename(columns={'atletas.pontos_num': 'pontuacao_total_periodo'}, inplace=True)
+        # Ordena por rodada crescente
+        df_sorted = dataframe_input.sort_values('atletas.rodada_id', ascending=True)
         
-        # 2. SCOUTS E METADADOS: Snapshot (Último)
-        df_snapshot = dataframe_input.sort_values('atletas.rodada_id', ascending=True).drop_duplicates('atletas.atleta_id', keep='last')
+        # Definição das agregações
+        agg_dict = {
+            'atletas.pontos_num': 'sum', # PONTOS: Somamos (R1 + R2)
+            'atletas.preco_num': 'last', # PREÇO: Último valor
+            'atletas.apelido': 'last',
+            'atletas.clube.id.full.name': 'last',
+            'atletas.clube_id': 'last',
+            'posicao_nome': 'last',
+            'atletas.foto': 'last',
+            'finalizacoes_total': 'last' # SCOUT: Como é acumulado, pegamos o último (last)
+        }
         
-        # 3. MERGE
-        df_final = pd.merge(df_snapshot, df_pontos, on='atletas.atleta_id', how='left')
+        # Todos os scouts individuais também são 'last' (acumulados na fonte)
+        for s in todos_scouts:
+            agg_dict[s] = 'last'
+            
+        # Agrupa
+        df_grouped = df_sorted.groupby('atletas.atleta_id').agg(agg_dict).reset_index()
         
-        return df_final
+        # Renomeia para ficar claro
+        df_grouped.rename(columns={'atletas.pontos_num': 'pontuacao_total_periodo'}, inplace=True)
+        
+        return df_grouped
 
-    # 1. Dados para Abas Gerais (Respeita filtro de preço)
+    # Gera os dados agrupados
     df_agrupado_geral = agrupar_dados(df_filtrado_completo)
-    
-    # 2. Dados para Robô/Comparador (Ignora filtro de preço)
-    df_pool_total = agrupar_dados(df_filtrado_base)
+    df_pool_total = agrupar_dados(df_filtrado_base) # Sem filtro de preço para o Robô
 
     # ==========================================
     # --- DASHBOARD ---
@@ -212,8 +228,7 @@ else:
             if st.button("🚀 Escalar Time"):
                 esquemas = {"4-3-3": {'Goleiro': 1, 'Lateral': 2, 'Zagueiro': 2, 'Meia': 3, 'Atacante': 3, 'Técnico': 0}, "3-4-3": {'Goleiro': 1, 'Lateral': 0, 'Zagueiro': 3, 'Meia': 4, 'Atacante': 3, 'Técnico': 0}, "3-5-2": {'Goleiro': 1, 'Lateral': 0, 'Zagueiro': 3, 'Meia': 5, 'Atacante': 2, 'Técnico': 0}, "4-4-2": {'Goleiro': 1, 'Lateral': 2, 'Zagueiro': 2, 'Meia': 4, 'Atacante': 2, 'Técnico': 0}, "5-3-2": {'Goleiro': 1, 'Lateral': 2, 'Zagueiro': 3, 'Meia': 3, 'Atacante': 2, 'Técnico': 0}}
                 
-                # Foco sempre em Pontuação Total agora
-                col_sort = 'pontuacao_total_periodo'
+                col_sort = 'pontuacao_total_periodo' # Foco total em pontos
                 pool = df_pool_total.sort_values(col_sort, ascending=False)
                 
                 time_atual = []
@@ -226,6 +241,7 @@ else:
                     df_time = pd.concat(time_atual)
                     custo = df_time['atletas.preco_num'].sum()
                     
+                    # Otimização Gulosa
                     loop = 0
                     while custo > orcamento and loop < 100:
                         melhor_troca = None
@@ -249,6 +265,7 @@ else:
                     
                     ordem = {'Goleiro': 1, 'Lateral': 2, 'Zagueiro': 3, 'Meia': 4, 'Atacante': 5}
                     df_time['ordem'] = df_time['posicao_nome'].map(ordem)
+                    
                     cols = st.columns(5)
                     i = 0
                     for _, row in df_time.sort_values('ordem').iterrows():
@@ -262,12 +279,12 @@ else:
                         i += 1
                 else: st.warning("Dados insuficientes.")
 
-        # --- ABA 2: COMPARADOR ---
+        # --- ABA 2: COMPARADOR (FILTROS SEPARADOS) ---
         with tab_comparador:
             st.header("⚔️ Comparador Mano a Mano")
             c1, c2 = st.columns(2)
             
-            # Filtros Individuais
+            # Filtros de Texto
             busca1 = c1.text_input("Filtrar Jogador 1", "").strip().lower()
             busca2 = c2.text_input("Filtrar Jogador 2", "").strip().lower()
             
@@ -300,22 +317,20 @@ else:
                 rds = sorted(df_jogos['rodada_id'].unique())
                 rodada = st.selectbox("Simular Rodada:", rds)
                 
-                # Fragilidade
+                # Mapa de Calor (Fragilidade)
                 df_heat = df_filtrado_completo[df_filtrado_completo['Adversario'] != 'N/A'].groupby(['Adversario', 'posicao_nome'])['atletas.pontos_num'].mean().reset_index()
                 
-                # Jogos
+                # Jogos Futuros
                 jogos = df_jogos[df_jogos['rodada_id'] == rodada][['clube_id', 'Adversario', 'Mando_Padrao']]
                 
-                # Merge
                 if not df_pool_total.empty:
-                    # Usa df_pool_total que tem 'atletas.clube_id' vindo do snapshot
                     df_cap = pd.merge(df_pool_total, jogos, left_on='atletas.clube_id', right_on='clube_id', how='inner')
                     
                     if not df_cap.empty:
                         df_final = pd.merge(df_cap, df_heat, on=['Adversario', 'posicao_nome'], how='left')
                         df_final['media_cedida_adv'] = df_final['atletas.pontos_num'].fillna(0)
                         
-                        # Score: Pontos Totais + (Fragilidade * 2) -> Apenas uma métrica de sugestão
+                        # Score Simples
                         df_final['score_seguranca'] = df_final['pontuacao_total_periodo'] + (df_final['media_cedida_adv'] * 2)
                         
                         if busca_cap:
@@ -324,7 +339,7 @@ else:
                         st.dataframe(
                             df_final[['atletas.apelido', 'posicao_nome', 'Adversario', 'pontuacao_total_periodo', 'media_cedida_adv', 'score_seguranca']]
                             .sort_values('score_seguranca', ascending=False)
-                            .rename(columns={'pontuacao_total_periodo': 'Pontos Totais', 'media_cedida_adv': 'Fragilidade Adv'}),
+                            .rename(columns={'pontuacao_total_periodo': 'Pontos Totais', 'media_cedida_adv': 'Fragilidade Adv', 'score_seguranca': 'Score Sugerido'}),
                             use_container_width=True, hide_index=True
                         )
                     else: st.warning("Sem jogos previstos.")
@@ -353,31 +368,24 @@ else:
             n1, n2, n3, n4 = st.columns(4)
             render_d("Gols Sofridos (GS)", 'GS', n1); render_d("Faltas Cometidas (FC)", 'FC', n2); render_d("Cartão Amarelo (CA)", 'CA', n3); render_d("Cartão Vermelho (CV)", 'CV', n4)
 
-        # --- ABA 5: RAIO-X (VISUAL ANTERIOR RESTAURADO) ---
+        # --- ABA 5: RAIO-X (VOLTOU AO ORIGINAL) ---
         with tab_adversario:
             st.subheader("🔥 Raio-X: Quem cede mais pontos?")
-            st.info("Mapa geral de fragilidade. Mostra quais times cedem mais pontos para cada posição.")
+            st.info("Mapa geral: Linha = Adversário, Coluna = Posição. Quanto mais vermelho, mais pontos cede.")
+            
             if 'Adversario' in df_filtrado_completo.columns:
-                # Mapa ÚNICO e GRANDE como pedido
                 df_heat = df_filtrado_completo[df_filtrado_completo['Adversario'] != 'N/A'].groupby(['Adversario', 'posicao_nome'])['atletas.pontos_num'].mean().reset_index()
                 
                 if not df_heat.empty:
                     heatmap_data = df_heat.pivot(index='Adversario', columns='posicao_nome', values='atletas.pontos_num').fillna(0)
-                    # Ordena pelo total cedido
+                    # Ordena
                     heatmap_data['Total'] = heatmap_data.sum(axis=1)
                     heatmap_data = heatmap_data.sort_values('Total', ascending=True).drop(columns='Total')
                     
-                    fig_heat = px.imshow(
-                        heatmap_data, 
-                        text_auto=".1f", 
-                        aspect="auto", 
-                        color_continuous_scale="Reds",
-                        title="Média de Pontos Cedidos (Por Posição)"
-                    )
+                    fig_heat = px.imshow(heatmap_data, text_auto=".1f", aspect="auto", color_continuous_scale="Reds")
                     fig_heat.update_layout(height=800)
                     st.plotly_chart(fig_heat, use_container_width=True)
-                else:
-                    st.warning("Sem dados suficientes para o mapa de calor.")
+                else: st.warning("Dados insuficientes para o mapa.")
 
         # --- ABA 6: TIMES ---
         with tab_times:
@@ -408,6 +416,9 @@ else:
             if busca_tab:
                 df_show = df_show[df_show['atletas.apelido'].str.lower().str.contains(busca_tab)]
             
-            # Removemos 'pontuacao_basica_atual' da visualização, mantendo apenas Pontos Totais
+            # Sem Pontuação Básica
             cols = ['atletas.apelido', 'atletas.clube.id.full.name', 'posicao_nome', 'atletas.preco_num', 'pontuacao_total_periodo'] + todos_scouts
-            st.dataframe(df_show[cols].sort_values('pontuacao_total_periodo', ascending=False), use_container_width=True, hide_index=True)
+            df_display = df_show[cols].sort_values('pontuacao_total_periodo', ascending=False)
+            df_display.columns = ['Apelido', 'Clube', 'Posição', 'Preço', 'Pontos Totais'] + todos_scouts
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
+

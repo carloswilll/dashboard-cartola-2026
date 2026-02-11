@@ -17,7 +17,7 @@ def formatar_foto(url):
 # --- Funções de Carregamento ---
 @st.cache_data
 def load_data():
-    # 1. Carregar dados das Rodadas (Lê todos os CSVs disponíveis)
+    # 1. Carregar dados das Rodadas
     rodada_files = glob.glob("rodada-*.csv")
     if not rodada_files:
         return pd.DataFrame(), pd.DataFrame()
@@ -38,7 +38,6 @@ def load_data():
     for f in confronto_files:
         try:
             temp_df = pd.read_csv(f)
-            # Cria a coluna de Mando Padrão já na leitura
             temp_df['Mando_Padrao'] = temp_df['Mando'].apply(
                 lambda x: 'CASA' if 'Casa' in str(x) and 'Fora' not in str(x) else 'FORA'
             )
@@ -57,7 +56,7 @@ df, df_jogos = load_data()
 if df.empty:
     st.error("⚠️ Nenhum dado de rodada encontrado. Verifique se os arquivos 'rodada-*.csv' estão na pasta.")
 else:
-    # Tratamento de Tipos Seguros (Evita quebrar se houver NaN)
+    # Tratamento de Tipos Seguros
     df['atletas.rodada_id'] = pd.to_numeric(df['atletas.rodada_id'], errors='coerce').fillna(0).astype(int)
     df['atletas.clube_id'] = pd.to_numeric(df['atletas.clube_id'], errors='coerce').fillna(0).astype(int)
     
@@ -88,19 +87,28 @@ else:
     df['posicao_nome'] = df['atletas.posicao_id'].map(pos_map)
 
     # --- GARANTIA DE SCOUTS (Preenche com 0 se não existir) ---
-    # Lista expandida para garantir que a aba Destaques funcione
-    todos_scouts = ['G', 'A', 'FT', 'FD', 'FF', 'FS', 'I', 'DS', 'SG', 'DE', 'DP', 'GS', 'FC', 'CA', 'CV', 'GC', 'PP']
+    todos_scouts = ['G', 'A', 'FT', 'FD', 'FF', 'FS', 'PS', 'I', 'PP', 'DS', 'SG', 'DE', 'DP', 'GS', 'FC', 'PC', 'CA', 'CV', 'GC']
     for col in todos_scouts:
         if col not in df.columns:
             df[col] = 0
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-    # --- CÁLCULO DA MÉDIA BÁSICA (Fórmula Clássica) ---
-    # Mantendo a fórmula simples que você prefere: Pontos - (Gols + Assistências)
-    df['media_basica'] = df['atletas.pontos_num'] - (8 * df['G']) - (5 * df['A'])
+    # --- CÁLCULO DA MÉDIA BÁSICA (Fórmula Aditiva) ---
+    # Soma apenas scouts positivos "básicos" (sem G, A, SG e sem negativos)
+    # Tabela: FT(+3), FD(+1.2), FF(+0.8), FS(+0.5), PS(+1.0), DP(+7.0), DE(+1.0), DS(+1.2)
+    df['media_basica'] = (
+        (df['FT'] * 3.0) + 
+        (df['FD'] * 1.2) + 
+        (df['FF'] * 0.8) + 
+        (df['FS'] * 0.5) + 
+        (df['PS'] * 1.0) + 
+        (df['DP'] * 7.0) + 
+        (df['DE'] * 1.0) + 
+        (df['DS'] * 1.2)
+    )
     
     # Cálculos Auxiliares
-    df['tamanho_visual'] = df['media_basica'].apply(lambda x: max(0.1, x)) # Proteção visual
+    df['tamanho_visual'] = df['media_basica'].apply(lambda x: max(0.1, x))
     df['scouts_ofensivos_total'] = df['G'] + df['A'] + df['FD'] + df['FF'] + df['FT'] + df['FS']
     df['scouts_defensivos_total'] = df['DS'] + df['DE'] + df['SG']
     df['finalizacoes_total'] = df['FD'] + df['FF'] + df['FT']
@@ -110,15 +118,10 @@ else:
     # ==========================================
     st.sidebar.header("🔍 Filtros Principais")
 
-    # 1. Filtro Deslizante de Rodada
+    # Filtros
     min_rodada, max_rodada = int(df['atletas.rodada_id'].min()), int(df['atletas.rodada_id'].max())
-    if min_rodada == max_rodada:
-        sel_rodada_range = (min_rodada, max_rodada)
-        st.sidebar.caption(f"Apenas dados da Rodada {min_rodada} disponíveis.")
-    else:
-        sel_rodada_range = st.sidebar.slider("Intervalo de Rodadas", min_rodada, max_rodada, (min_rodada, max_rodada))
+    sel_rodada_range = st.sidebar.slider("Intervalo de Rodadas", min_rodada, max_rodada, (min_rodada, max_rodada))
 
-    # 2. Filtro Deslizante de Preço e Pontuação
     min_preco, max_preco = float(df['atletas.preco_num'].min()), float(df['atletas.preco_num'].max())
     sel_preco_range = st.sidebar.slider("Faixa de Preço (C$)", min_preco, max_preco, (min_preco, max_preco))
 
@@ -138,9 +141,7 @@ else:
     sel_mando = st.sidebar.multiselect("Mando", opcoes_mando, default=['CASA', 'FORA'])
     somente_jogaram = st.sidebar.checkbox("Apenas quem entrou em campo?", value=True)
 
-    # ==========================================
-    # --- APLICAÇÃO DOS FILTROS ---
-    # ==========================================
+    # Aplicação dos Filtros
     df_filtrado = df[
         (df['atletas.rodada_id'] >= sel_rodada_range[0]) &
         (df['atletas.rodada_id'] <= sel_rodada_range[1]) &
@@ -150,14 +151,10 @@ else:
         (df['atletas.pontos_num'] <= sel_pts_range[1])
     ]
     
-    if sel_clube:
-        df_filtrado = df_filtrado[df_filtrado['atletas.clube.id.full.name'].isin(sel_clube)]
-    if sel_posicao:
-        df_filtrado = df_filtrado[df_filtrado['posicao_nome'].isin(sel_posicao)]
-    if sel_mando:
-        df_filtrado = df_filtrado[df_filtrado['Mando_Padrao'].isin(sel_mando)]
-    if somente_jogaram:
-        df_filtrado = df_filtrado[df_filtrado['atletas.entrou_em_campo'] == True]
+    if sel_clube: df_filtrado = df_filtrado[df_filtrado['atletas.clube.id.full.name'].isin(sel_clube)]
+    if sel_posicao: df_filtrado = df_filtrado[df_filtrado['posicao_nome'].isin(sel_posicao)]
+    if sel_mando: df_filtrado = df_filtrado[df_filtrado['Mando_Padrao'].isin(sel_mando)]
+    if somente_jogaram: df_filtrado = df_filtrado[df_filtrado['atletas.entrou_em_campo'] == True]
 
     # ==========================================
     # --- INTERFACE PRINCIPAL ---
@@ -169,12 +166,12 @@ else:
         k1, k2, k3, k4 = st.columns(4)
         k1.metric("Maior Pontuador", f"{df_filtrado['atletas.pontos_num'].max():.1f} pts")
         k2.metric("Média Geral", f"{df_filtrado['atletas.pontos_num'].mean():.2f}")
-        k3.metric("Média de Preço", f"C$ {df_filtrado['atletas.preco_num'].mean():.2f}")
+        k3.metric("Média Básica (Nova)", f"{df_filtrado['media_basica'].mean():.2f}")
         k4.metric("Jogadores Analisados", f"{len(df_filtrado)}")
 
         st.markdown("---")
 
-        # Abas do Dashboard
+        # Abas
         tab_destaques, tab_times, tab_scouts, tab_valorizacao, tab_tabela = st.tabs([
             "🏆 Destaques (Novo)", 
             "🛡️ Análise de Times", 
@@ -183,11 +180,10 @@ else:
             "📋 Tabela Completa"
         ])
 
-        # --- ABA 1: DESTAQUES (NOVA VERSÃO COM FOTOS E TODOS OS SCOUTS) ---
+        # --- ABA 1: DESTAQUES (VERSÃO NOVA COM FOTOS) ---
         with tab_destaques:
             st.markdown("#### 🔥 Líderes de Estatísticas")
             
-            # Função para renderizar o cartão do jogador com foto
             def render_destaque(label, col_scout, container):
                 if df_filtrado[col_scout].sum() == 0:
                     container.info(f"{label}: 0")
@@ -242,7 +238,7 @@ else:
             render_destaque("Gol Contra (GC)", 'GC', n5)
             render_destaque("Pênalti Perdido (PP)", 'PP', n6)
 
-        # --- ABA 2: ANÁLISE DE TIMES (REVERTIDA PARA ANTIGA) ---
+        # --- ABA 2: ANÁLISE DE TIMES (VERSÃO ANTIGA) ---
         with tab_times:
             club_stats = df_filtrado.groupby('atletas.clube.id.full.name').agg({
                 'atletas.pontos_num': 'mean',
@@ -267,7 +263,7 @@ else:
                                  color='Total_Finalizacoes', color_continuous_scale='Reds')
                 st.plotly_chart(fig_fin, use_container_width=True)
 
-        # --- ABA 3: CASA VS FORA (REVERTIDA PARA ANTIGA) ---
+        # --- ABA 3: CASA VS FORA (VERSÃO ANTIGA) ---
         with tab_scouts:
             if not df_filtrado['Mando_Padrao'].isin(['N/A']).all():
                 grupo_mando = df_filtrado.groupby(['atletas.clube.id.full.name', 'Mando_Padrao'])[['scouts_ofensivos_total', 'scouts_defensivos_total']].mean().reset_index()
@@ -287,7 +283,7 @@ else:
             else:
                 st.info("Filtre por CASA ou FORA para visualizar esta aba.")
 
-        # --- ABA 4: VALORIZAÇÃO (REVERTIDA PARA ANTIGA) ---
+        # --- ABA 4: VALORIZAÇÃO (VERSÃO ANTIGA) ---
         with tab_valorizacao:
             st.subheader("Relação Preço x Entrega")
             fig_val = px.scatter(
@@ -309,7 +305,7 @@ else:
             )
             st.plotly_chart(fig_val, use_container_width=True)
 
-        # --- ABA 5: TABELA COMPLETA (REVERTIDA PARA ANTIGA) ---
+        # --- ABA 5: TABELA COMPLETA (VERSÃO ANTIGA) ---
         with tab_tabela:
             st.subheader("Buscador Detalhado")
             cols_view = [
@@ -320,7 +316,6 @@ else:
             
             cols_existentes = [c for c in cols_view if c in df_filtrado.columns]
             
-            # Renomear para ficar bonito na tabela
             df_display = df_filtrado[cols_existentes].sort_values('atletas.pontos_num', ascending=False)
             df_display.columns = [c.replace('atletas.', '').replace('.id.full.name', '').replace('_num', '').replace('_', ' ').title() for c in cols_existentes]
             

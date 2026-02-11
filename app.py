@@ -32,7 +32,7 @@ def load_data():
             
     df_main = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
     
-    # Remove duplicatas brutas se houver erro na leitura
+    # Remove duplicatas brutas
     if not df_main.empty:
         df_main = df_main.drop_duplicates(subset=['atletas.atleta_id', 'atletas.rodada_id'])
 
@@ -119,7 +119,7 @@ else:
     df['finalizacoes_total'] = df['FD'] + df['FF'] + df['FT']
 
     # ==========================================
-    # --- FILTROS ---
+    # --- SIDEBAR: FILTROS ---
     # ==========================================
     st.sidebar.header("🔍 Filtros Principais")
 
@@ -159,8 +159,7 @@ else:
     if sel_mando: df_periodo = df_periodo[df_periodo['Mando_Padrao'].isin(sel_mando)]
     if somente_jogaram: df_periodo = df_periodo[df_periodo['atletas.entrou_em_campo'] == True]
 
-    # Aplica filtro de preço/pontos APÓS agrupar ou antes?
-    # Para preço e pontos por jogo, filtramos antes
+    # Aplica filtro de preço/pontos
     df_periodo = df_periodo[
         (df_periodo['atletas.preco_num'] >= sel_preco_range[0]) &
         (df_periodo['atletas.preco_num'] <= sel_preco_range[1]) &
@@ -169,22 +168,21 @@ else:
     ]
 
     # ==========================================
-    # --- AGRUPAMENTO INTELIGENTE (CORREÇÃO DE SCOUT ACUMULADO) ---
+    # --- AGRUPAMENTO INTELIGENTE (SNAPSHOT + SOMA) ---
     # ==========================================
     if not df_periodo.empty:
-        # Passo A: PONTUAÇÃO é SOMADA (Pois cada rodada tem sua pontuação única)
+        # A) SOMA da Pontuação
         df_pontos = df_periodo.groupby('atletas.atleta_id')['atletas.pontos_num'].sum().reset_index()
         df_pontos.rename(columns={'atletas.pontos_num': 'pontuacao_total_periodo'}, inplace=True)
         
-        # Passo B: SCOUTS e PREÇO são "SNAPSHOT" (Pegar o da Última Rodada Selecionada)
-        # Ordenamos por rodada decrescente e pegamos o primeiro registro de cada atleta
+        # B) SNAPSHOT dos Scouts (Pega o acumulado da última rodada selecionada)
         df_snapshot = df_periodo.sort_values('atletas.rodada_id', ascending=False).drop_duplicates('atletas.atleta_id')
         
-        # Juntamos as duas lógicas
+        # Merge
         df_agrupado = pd.merge(df_snapshot, df_pontos, on='atletas.atleta_id', how='left')
         
-        # Recalcula Média Básica sobre os SCOUTS ACUMULADOS (que vieram do snapshot)
-        df_agrupado['media_basica_atual'] = (
+        # Recalcula Média Básica (Soma acumulada pois vem do snapshot)
+        df_agrupado['media_basica_total'] = (
             (df_agrupado['FT'] * 3.0) + (df_agrupado['FD'] * 1.2) + (df_agrupado['FF'] * 0.8) + 
             (df_agrupado['FS'] * 0.5) + (df_agrupado['PS'] * 1.0) + (df_agrupado['DP'] * 7.0) + 
             (df_agrupado['DE'] * 1.0) + (df_agrupado['DS'] * 1.2)
@@ -201,8 +199,8 @@ else:
         # KPIs
         k1, k2, k3, k4 = st.columns(4)
         k1.metric("Maior Pontuador (Soma)", f"{df_agrupado['pontuacao_total_periodo'].max():.1f}")
-        k2.metric("Média Geral (No Período)", f"{df_periodo['atletas.pontos_num'].mean():.2f}")
-        k3.metric("Média Básica Atual", f"{df_agrupado['media_basica_atual'].mean():.2f}")
+        k2.metric("Média Geral (Por Jogo)", f"{df_periodo['atletas.pontos_num'].mean():.2f}")
+        k3.metric("Pontuação Básica (Acumulada)", f"{df_agrupado['media_basica_total'].mean():.2f}")
         k4.metric("Jogadores", f"{len(df_agrupado)}")
 
         st.markdown("---")
@@ -216,7 +214,7 @@ else:
             "📋 Tabela"
         ])
 
-        # --- ABA 1: DESTAQUES (USANDO DF_AGRUPADO - ÚLTIMO SCOUT) ---
+        # --- ABA 1: DESTAQUES ---
         with tab_destaques:
             st.markdown(f"#### 🔥 Líderes (Acumulado até a última rodada selecionada)")
             
@@ -237,10 +235,9 @@ else:
                     with c_info:
                         st.caption(f"{row['atletas.apelido']}")
                         st.caption(f"{row['atletas.clube.id.full.name']}")
-                        st.metric("Acumulado", int(row[col_scout]))
+                        st.metric("Total", int(row[col_scout]))
                     st.divider()
 
-            # Setores
             c1, c2, c3, c4 = st.columns(4)
             render_destaque("Artilheiro (G)", 'G', c1)
             render_destaque("Garçom (A)", 'A', c2)
@@ -265,25 +262,60 @@ else:
             render_destaque("Cartão Amarelo (CA)", 'CA', n3)
             render_destaque("Cartão Vermelho (CV)", 'CV', n4)
 
-        # --- ABA 2: RAIO-X ADVERSÁRIO (Média sobre DF_PERIODO - por jogo) ---
+        # --- ABA 2: RAIO-X ADVERSÁRIO (REDESENHADA) ---
         with tab_adversario:
-            st.subheader("🔥 Mapa de Calor: Quem cede mais pontos?")
+            st.subheader("🔥 Raio-X: Quem cede mais pontos por posição?")
+            st.info("Quanto mais intensa a cor, mais pontos esse time costuma ceder para a posição específica.")
+            
             if 'Adversario' in df_periodo.columns and not df_periodo['Adversario'].isin(['N/A']).all():
+                # Prepara dados gerais
                 df_heat = df_periodo[df_periodo['Adversario'] != 'N/A'].groupby(['Adversario', 'posicao_nome'])['atletas.pontos_num'].mean().reset_index()
-                heatmap_data = df_heat.pivot(index='Adversario', columns='posicao_nome', values='atletas.pontos_num').fillna(0)
-                heatmap_data['Total'] = heatmap_data.sum(axis=1)
-                heatmap_data = heatmap_data.sort_values('Total', ascending=True).drop(columns='Total')
+                
+                # Função para criar Heatmap específico
+                def criar_heatmap_posicao(posicoes_alvo, titulo, cor_escala):
+                    df_pos = df_heat[df_heat['posicao_nome'].isin(posicoes_alvo)]
+                    if df_pos.empty: return None
+                    
+                    pivot = df_pos.pivot(index='Adversario', columns='posicao_nome', values='atletas.pontos_num').fillna(0)
+                    pivot['Total'] = pivot.sum(axis=1)
+                    pivot = pivot.sort_values('Total', ascending=True).drop(columns='Total')
+                    
+                    fig = px.imshow(
+                        pivot, 
+                        text_auto=".1f", 
+                        aspect="auto", 
+                        color_continuous_scale=cor_escala,
+                        title=titulo
+                    )
+                    fig.update_layout(height=600, xaxis_title=None, yaxis_title=None)
+                    return fig
 
-                fig_heat = px.imshow(heatmap_data, text_auto=".1f", aspect="auto", color_continuous_scale="Reds")
-                fig_heat.update_layout(height=800)
-                st.plotly_chart(fig_heat, use_container_width=True)
+                # Layout em Colunas
+                c_goleiro, c_defesa, c_meia, c_ataque = st.columns(4)
+
+                with c_goleiro:
+                    fig_gol = criar_heatmap_posicao(['Goleiro'], "🥅 Goleiros", "Blues")
+                    if fig_gol: st.plotly_chart(fig_gol, use_container_width=True)
+
+                with c_defesa:
+                    fig_def = criar_heatmap_posicao(['Zagueiro', 'Lateral'], "🛡️ Defensores", "Greens")
+                    if fig_def: st.plotly_chart(fig_def, use_container_width=True)
+
+                with c_meia:
+                    fig_mei = criar_heatmap_posicao(['Meia'], "🧠 Meias", "Oranges")
+                    if fig_mei: st.plotly_chart(fig_mei, use_container_width=True)
+
+                with c_ataque:
+                    fig_ata = criar_heatmap_posicao(['Atacante'], "⚽ Atacantes", "Reds")
+                    if fig_ata: st.plotly_chart(fig_ata, use_container_width=True)
+
             else:
                 st.warning("Dados de Adversário indisponíveis.")
 
-        # --- ABA 3: TIMES (Média sobre DF_PERIODO) ---
+        # --- ABA 3: TIMES ---
         with tab_times:
             club_stats = df_periodo.groupby('atletas.clube.id.full.name').agg({
-                'atletas.pontos_num': 'mean', 'finalizacoes_total': 'mean' # Média por jogo
+                'atletas.pontos_num': 'mean', 'finalizacoes_total': 'mean'
             }).reset_index()
             
             c_t1, c_t2 = st.columns(2)
@@ -308,7 +340,7 @@ else:
             else:
                 st.info("Filtre por CASA ou FORA.")
 
-        # --- ABA 5: VALORIZAÇÃO (USANDO DF_PERIODO para ver dispersão jogo a jogo) ---
+        # --- ABA 5: VALORIZAÇÃO ---
         with tab_valorizacao:
             st.subheader("Relação Preço x Entrega (Jogo a Jogo)")
             fig_val = px.scatter(
@@ -323,11 +355,11 @@ else:
             )
             st.plotly_chart(fig_val, use_container_width=True)
 
-        # --- ABA 6: TABELA COMPLETA (DF_AGRUPADO - TOTAL PONTOS + SCOUT ATUAL) ---
+        # --- ABA 6: TABELA COMPLETA ---
         with tab_tabela:
             st.subheader("Tabela Consolidada")
             cols_info = ['atletas.apelido', 'atletas.clube.id.full.name', 'posicao_nome', 'atletas.preco_num']
-            cols_kpis = ['pontuacao_total_periodo', 'media_basica_atual']
+            cols_kpis = ['pontuacao_total_periodo', 'media_basica_total']
             cols_view = cols_info + cols_kpis + todos_scouts
             
             df_display = df_agrupado[cols_view].sort_values('pontuacao_total_periodo', ascending=False)
@@ -338,7 +370,7 @@ else:
                 'posicao_nome': 'Posição',
                 'atletas.preco_num': 'Preço Atual (C$)',
                 'pontuacao_total_periodo': 'Pontos Totais (Soma)',
-                'media_basica_atual': 'Média Básica (Atual)'
+                'media_basica_total': 'Pontuação Básica (Acumulada)'
             }
             
             df_display = df_display.rename(columns=renomear)

@@ -63,6 +63,15 @@ df, df_jogos = load_data()
 if df.empty:
     st.error("⚠️ Nenhum dado encontrado.")
 else:
+    # Identificação Dinâmica da Coluna de Clube (Correção do KeyError)
+    possiveis_nomes_clube = ['atletas.clube.id.full.name', 'Clube', 'clube_nome', 'atletas.clube_id_full_name', 'club_name']
+    col_clube = next((c for c in possiveis_nomes_clube if c in df.columns), None)
+    
+    if not col_clube:
+        # Se não achar, cria uma genérica baseada no ID
+        df['Nome_Clube_Gen'] = "Clube " + df['atletas.clube_id'].astype(str)
+        col_clube = 'Nome_Clube_Gen'
+
     # Tipagem
     df['atletas.rodada_id'] = pd.to_numeric(df['atletas.rodada_id'], errors='coerce').fillna(0).astype(int)
     df['atletas.clube_id'] = pd.to_numeric(df['atletas.clube_id'], errors='coerce').fillna(0).astype(int)
@@ -105,27 +114,27 @@ else:
     sel_preco_range = st.sidebar.slider("Preço (C$)", min_preco, max_preco, (min_preco, max_preco))
     st.sidebar.markdown("---")
     
-    all_clubes = sorted(df['atletas.clube.id.full.name'].dropna().unique())
+    all_clubes = sorted(df[col_clube].dropna().unique())
     sel_clube = st.sidebar.multiselect("Clube", all_clubes, default=all_clubes)
     sel_posicao = st.sidebar.multiselect("Posição", sorted(df['posicao_nome'].dropna().unique()), default=sorted(df['posicao_nome'].dropna().unique()))
     sel_mando = st.sidebar.multiselect("Mando", ['CASA', 'FORA'], default=['CASA', 'FORA'])
     
     # --- FILTRAGEM ---
     df_filtrado_base = df[(df['atletas.rodada_id'] >= sel_rodada_range[0]) & (df['atletas.rodada_id'] <= sel_rodada_range[1])]
-    if sel_clube: df_filtrado_base = df_filtrado_base[df_filtrado_base['atletas.clube.id.full.name'].isin(sel_clube)]
+    if sel_clube: df_filtrado_base = df_filtrado_base[df_filtrado_base[col_clube].isin(sel_clube)]
     if sel_posicao: df_filtrado_base = df_filtrado_base[df_filtrado_base['posicao_nome'].isin(sel_posicao)]
     if sel_mando: df_filtrado_base = df_filtrado_base[df_filtrado_base['Mando_Padrao'].isin(sel_mando)]
     
     df_filtrado_completo = df_filtrado_base[(df_filtrado_base['atletas.preco_num'] >= sel_preco_range[0]) & (df_filtrado_base['atletas.preco_num'] <= sel_preco_range[1])]
 
-    # --- AGRUPAMENTO (CORRETO) ---
+    # --- AGRUPAMENTO ---
     def agrupar_dados(dataframe_input):
         if dataframe_input.empty: return pd.DataFrame()
         df_sorted = dataframe_input.sort_values('atletas.rodada_id', ascending=True)
         agg_dict = {
             'atletas.pontos_num': 'sum',
             'atletas.preco_num': 'last', 'atletas.apelido': 'last',
-            'atletas.clube.id.full.name': 'last', 'atletas.clube_id': 'last',
+            col_clube: 'last', 'atletas.clube_id': 'last',
             'posicao_nome': 'last', 'atletas.foto': 'last',
             'finalizacoes_total': 'last', 'atletas.jogos_num': 'last'
         }
@@ -133,7 +142,7 @@ else:
         df_grouped = df_sorted.groupby('atletas.atleta_id').agg(agg_dict).reset_index()
         df_grouped.rename(columns={'atletas.pontos_num': 'pontuacao_total_periodo'}, inplace=True)
         
-        # RESTAURAÇÃO DA PONTUAÇÃO BÁSICA (Apenas Positivos)
+        # CÁLCULO PONTUAÇÃO BÁSICA (RESTAURADO)
         df_grouped['pontuacao_basica_atual'] = (
             (df_grouped['DS'] * 1.2) + (df_grouped['DE'] * 1.0) + (df_grouped['SG'] * 5.0) + 
             (df_grouped['FS'] * 0.5) + (df_grouped['FD'] * 1.2) + (df_grouped['FT'] * 3.0) + 
@@ -150,81 +159,79 @@ else:
     if df_agrupado_geral.empty and df_pool_total.empty:
         st.warning("⚠️ Nenhum jogador encontrado.")
     else:
-        # ABAS
         tab1, tab2, tab3, tab4 = st.tabs(["📅 Central de Jogos", "🤖 Inteligência", "📊 Tática", "📈 Mercado"])
 
         # ---------------------------------------------------------
-        # ABA 1: CENTRAL DE JOGOS (RICA E COMPACTA)
+        # ABA 1: CENTRAL DE JOGOS
         # ---------------------------------------------------------
         with tab1:
             if not df_jogos.empty:
-                rodadas = sorted(df_jogos['rodada_id'].unique())
-                r_sel = st.selectbox("Selecione a Rodada:", rodadas)
+                col_sel, col_kpi = st.columns([1, 3])
+                with col_sel:
+                    rodadas_disp = sorted(df_jogos['rodada_id'].unique())
+                    rodada_selecionada = st.selectbox("Selecione a Rodada:", rodadas_disp)
                 
-                # Dados
-                jogos_r = df_jogos[df_jogos['rodada_id'] == r_sel]
-                jogos_casa = jogos_r[jogos_r['Mando_Padrao'] == 'CASA'].copy()
-                stats = df.groupby(['atletas.clube.id.full.name', 'Mando_Padrao'])['atletas.pontos_num'].mean().reset_index()
+                jogos_r = df_jogos[df_jogos['rodada_id'] == rodada_selecionada]
+                stats_clubes = df.groupby([col_clube, 'Mando_Padrao'])['atletas.pontos_num'].mean().reset_index()
                 
-                # --- INSIGHTS NO TOPO ---
-                if not jogos_casa.empty:
-                    # Enriquecer com métricas
-                    jogos_casa['Mandante_Avg'] = jogos_casa['atletas.clube.id.full.name'].map(
-                        stats[stats['Mando_Padrao']=='CASA'].set_index('atletas.clube.id.full.name')['atletas.pontos_num']
-                    ).fillna(0)
-                    
-                    # Tentar match de visitante
-                    jogos_casa['Visitante_Avg'] = jogos_casa.apply(
-                        lambda x: stats[(stats['atletas.clube.id.full.name'].astype(str).str.contains(x['Adversario'])) & (stats['Mando_Padrao']=='FORA')]['atletas.pontos_num'].mean(), axis=1
-                    ).fillna(0)
-                    
-                    # Calcular Favoritismo
-                    jogos_casa['Delta'] = jogos_casa['Mandante_Avg'] - jogos_casa['Visitante_Avg']
-                    
-                    # KPIs Rápidos
-                    k1, k2, k3 = st.columns(3)
-                    melhor_mandante = jogos_casa.loc[jogos_casa['Mandante_Avg'].idxmax()]
-                    pior_visitante = jogos_casa.loc[jogos_casa['Visitante_Avg'].idxmin()] # Menor média fora = Pior
-                    jogo_equilibrado = jogos_casa.loc[jogos_casa['Delta'].abs().idxmin()]
-                    
-                    k1.metric("🏰 Fortaleza em Casa", f"{melhor_mandante['atletas.clube.id.full.name']}", f"Média: {melhor_mandante['Mandante_Avg']:.1f}")
-                    k2.metric("🚌 Visitante Frágil", f"{pior_visitante['Adversario']}", f"Média Fora: {pior_visitante['Visitante_Avg']:.1f}")
-                    k3.metric("⚖️ Jogo Mais Equilibrado", f"{jogo_equilibrado['atletas.clube.id.full.name']} x {jogo_equilibrado['Adversario']}")
-                    
-                    st.divider()
-                    
-                    # Tabela Compacta
+                jogos_unicos = jogos_r[jogos_r['Mando_Padrao'] == 'CASA'].copy()
+                
+                if not jogos_unicos.empty:
                     tabela = []
-                    for _, row in jogos_casa.iterrows():
-                        fav = (row['Mandante_Avg'] - row['Visitante_Avg'])
-                        status = "Equilibrado"
-                        if fav > 15: status = "Mandante Muito Forte"
-                        elif fav > 5: status = "Mandante Leve Fav."
-                        elif fav < -5: status = "Visitante Leve Fav."
-                        elif fav < -15: status = "Visitante Muito Forte"
+                    # Mapeamento ID -> Nome seguro
+                    mapa_nomes = df[['atletas.clube_id', col_clube]].drop_duplicates().set_index('atletas.clube_id')[col_clube].to_dict()
+
+                    for _, jogo in jogos_unicos.iterrows():
+                        mandante = mapa_nomes.get(jogo['clube_id'], f"ID {jogo['clube_id']}")
+                        visitante = jogo['Adversario']
                         
+                        m_stat = stats_clubes[(stats_clubes[col_clube] == mandante) & (stats_clubes['Mando_Padrao'] == 'CASA')]['atletas.pontos_num'].mean()
+                        v_stat = stats_clubes[(stats_clubes[col_clube].astype(str).str.contains(visitante, case=False, na=False)) & (stats_clubes['Mando_Padrao'] == 'FORA')]['atletas.pontos_num'].mean()
+                        
+                        m_val = m_stat if pd.notna(m_stat) else 0
+                        v_val = v_stat if pd.notna(v_stat) else 0
+                        
+                        delta = m_val - v_val
+                        fav_bar = "⚪ Equilibrado"
+                        if delta > 10: fav_bar = "🟢 Mandante Forte"
+                        elif delta < -10: fav_bar = "🔴 Visitante Forte"
+                        elif delta > 0: fav_bar = "🟢 Leve Mandante"
+                        elif delta < 0: fav_bar = "🔴 Leve Visitante"
+
                         tabela.append({
-                            "Data": f"{row.get('Data','')} {row.get('Hora','')}",
-                            "Mandante": row['atletas.clube.id.full.name'],
-                            "Força Casa": row['Mandante_Avg'],
-                            "Visitante": row['Adversario'],
-                            "Força Fora": row['Visitante_Avg'],
-                            "Favoritismo (Estimado)": status,
-                            "Local": row.get('Estadio', '')
+                            "Data/Hora": f"{jogo.get('Data','')} {jogo.get('Hora','')}",
+                            "Mandante": mandante,
+                            "Força Casa": m_val,
+                            "Visitante": visitante,
+                            "Força Fora": v_val,
+                            "Favoritismo": fav_bar,
+                            "Local": jogo.get('Estadio', '')
                         })
                     
+                    df_view_jogos = pd.DataFrame(tabela)
+                    
+                    # KPIs
+                    if not df_view_jogos.empty:
+                        best_home = df_view_jogos.loc[df_view_jogos['Força Casa'].idxmax()]
+                        worst_away = df_view_jogos.loc[df_view_jogos['Força Fora'].idxmin()]
+                        
+                        k1, k2, k3 = st.columns(3)
+                        k1.metric("🏰 Melhor Mandante", best_home['Mandante'], f"{best_home['Força Casa']:.1f} pts")
+                        k2.metric("🚌 Visitante + Fraco", worst_away['Visitante'], f"{worst_away['Força Fora']:.1f} pts")
+                        k3.metric("🔥 Jogo + Promissor", f"{best_home['Mandante']} x {best_home['Visitante']}")
+                    
                     st.dataframe(
-                        pd.DataFrame(tabela),
+                        df_view_jogos,
                         column_config={
-                            "Força Casa": st.column_config.ProgressColumn("Média Pts (Casa)", format="%.1f", min_value=0, max_value=80),
-                            "Força Fora": st.column_config.ProgressColumn("Média Pts (Fora)", format="%.1f", min_value=0, max_value=80),
+                            "Força Casa": st.column_config.ProgressColumn("Média Casa", format="%.1f", min_value=0, max_value=80),
+                            "Força Fora": st.column_config.ProgressColumn("Média Fora", format="%.1f", min_value=0, max_value=80),
                         },
                         use_container_width=True, hide_index=True
                     )
             else: st.warning("Confrontos não carregados.")
 
         # ---------------------------------------------------------
-        # ABA 2: INTELIGÊNCIA (Robô, Comparador, Capitão)
+        # ABA 2: INTELIGÊNCIA
         # ---------------------------------------------------------
         with tab2:
             st1, st2, st3 = st.tabs(["🤖 Robô", "⚔️ Comparador", "© Capitão"])
@@ -303,12 +310,12 @@ else:
                         p['T'] = p.sum(axis=1); p = p.sort_values('T').drop(columns='T')
                         st.plotly_chart(px.imshow(p, text_auto=".1f", color_continuous_scale="Reds"), use_container_width=True)
             with st2:
-                g = df_filtrado_completo.groupby('atletas.clube.id.full.name')[['atletas.pontos_num','finalizacoes_total']].mean().reset_index()
-                st.plotly_chart(px.bar(g.sort_values('atletas.pontos_num'), x='atletas.pontos_num', y='atletas.clube.id.full.name', orientation='h', title="Média Pts"), use_container_width=True)
+                g = df_filtrado_completo.groupby(col_clube)[['atletas.pontos_num','finalizacoes_total']].mean().reset_index()
+                st.plotly_chart(px.bar(g.sort_values('atletas.pontos_num'), x='atletas.pontos_num', y=col_clube, orientation='h', title="Média Pts"), use_container_width=True)
             with st3:
                 if 'Mando_Padrao' in df_filtrado_completo.columns:
-                    g = df_filtrado_completo.groupby(['atletas.clube.id.full.name','Mando_Padrao'])['scouts_ofensivos_total'].mean().reset_index()
-                    st.plotly_chart(px.bar(g, x='atletas.clube.id.full.name', y='scouts_ofensivos_total', color='Mando_Padrao', barmode='group'), use_container_width=True)
+                    g = df_filtrado_completo.groupby([col_clube,'Mando_Padrao'])['scouts_ofensivos_total'].mean().reset_index()
+                    st.plotly_chart(px.bar(g, x=col_clube, y='scouts_ofensivos_total', color='Mando_Padrao', barmode='group'), use_container_width=True)
 
         # ---------------------------------------------------------
         # ABA 4: MERCADO & DADOS
@@ -319,8 +326,8 @@ else:
                 b = st.text_input("Buscar Tabela", "").strip().lower()
                 show = df_agrupado_geral
                 if b: show = show[show['atletas.apelido'].str.lower().str.contains(b)]
-                # COLUNA RESTAURADA AQUI: 'pontuacao_basica_atual'
-                cols = ['atletas.apelido','atletas.clube.id.full.name','posicao_nome','atletas.preco_num','pontuacao_total_periodo','pontuacao_basica_atual'] + todos_scouts
+                # COLUNAS INCLUINDO PONTUAÇÃO BÁSICA
+                cols = ['atletas.apelido', col_clube, 'posicao_nome', 'atletas.preco_num', 'pontuacao_total_periodo', 'pontuacao_basica_atual'] + todos_scouts
                 st.dataframe(show[cols].sort_values('pontuacao_total_periodo', ascending=False), use_container_width=True, hide_index=True)
             with st2:
                 st.plotly_chart(px.scatter(df_filtrado_completo, x='atletas.preco_num', y='atletas.pontos_num', color='posicao_nome', hover_name='atletas.apelido'), use_container_width=True)
